@@ -1,0 +1,90 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = 'manojgk1089/backend-money-bank'
+        IMAGE_TAG  = "v1.${BUILD_NUMBER}"
+         AWS_REGION    = 'ap-southeast-2'
+        CLUSTER_NAME  = 'manojgk-banking-cluster'
+        K8S_NAMESPACE = 'banking'
+    }
+
+    stages {
+
+        stage('Checkout Source Code') {
+            steps {
+                checkout scmGit(
+                    branches: [[name: '*/main']],
+                    extensions: [],
+                    userRemoteConfigs: [[
+                        url: 'https://github.com/manojgk0210-hue/Backend-Money-Bank.git'
+                    ]]
+                )
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                sh '''
+                    docker build -t ${IMAGE_NAME}:${IMAGE_TAG} .
+                '''
+            }
+        }
+
+        stage('Push Image to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-creds',
+                    usernameVariable: 'DOCKER_USERNAME',
+                    passwordVariable: 'DOCKER_PASSWORD'
+                )]) {
+                    sh '''
+                        set -e
+
+                        echo "$DOCKER_PASSWORD" | docker login \
+                            -u "$DOCKER_USERNAME" \
+                            --password-stdin
+
+                        docker push ${IMAGE_NAME}:${IMAGE_TAG}
+
+                        docker logout
+                    '''
+                }
+            }
+        }
+          // NEW: deploys the image that was just pushed
+        stage('Deploy to EKS') {
+            steps {
+                sh '''
+                    set -e
+
+                    # Connect kubectl to the cluster
+                    aws eks update-kubeconfig --region ${AWS_REGION} --name ${CLUSTER_NAME}
+
+                    # Point the Deployment at the new image tag
+                    kubectl set image deployment/banking-backend \
+                        backend=${IMAGE_NAME}:${IMAGE_TAG} \
+                        -n ${K8S_NAMESPACE}
+
+                    # Wait until the new pods are healthy (fails the build if not)
+                    kubectl rollout status deployment/banking-backend \
+                        -n ${K8S_NAMESPACE} --timeout=180s
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Docker image successfully pushed: ${IMAGE_NAME}:${IMAGE_TAG}"
+        }
+
+        failure {
+            echo 'CD Pipeline failed. Check Jenkins console output.'
+        }
+
+        always {
+            echo 'Backend Money Bank CD Pipeline execution completed.'
+        }
+    }
+}
