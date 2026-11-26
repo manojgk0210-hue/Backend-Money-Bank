@@ -80,6 +80,7 @@ public CorsConfigurationSource corsConfigurationSource() {
     CorsConfiguration config = new CorsConfiguration();
     config.setAllowedOrigins(List.of(
             "https://d3h7qnd0mffv6m.cloudfront.net",
+            "https://app.manojgk.in",
             "http://localhost:5173"
     ));
     config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
